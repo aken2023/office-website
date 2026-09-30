@@ -214,4 +214,10 @@ export type PluginMode = "featured" | "all" | "none";
 
 export interface ServerOptions {
   getState?: () => { plugins: PluginMode };
+  /** 保存到远程成功/失败时回调（可选） */
+  onRemoteSave?: (info: {
+    ok: boolean;
+    path?: string;
+    error?: string;
+  }) => void;
 }
