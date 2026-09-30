@@ -438,16 +438,75 @@ export class EditorServer {
         }
         if (!output) {
           console.error("Conversion failed");
-          // TODO: error message
+          this.options.onRemoteSave?.({
+            ok: false,
+            error: "Conversion failed",
+          });
           return { status: "error" };
         }
+
         const blob = new Blob([new Uint8Array(output)]);
-        const url = URL.createObjectURL(blob);
+
+        // ---------- 远程保存到 WebDAV Worker ----------
+        if (this.saveUrl) {
+          try {
+            const res = await fetch(this.saveUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Type":
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              },
+              body: blob,
+            });
+            const text = await res.text().catch(() => "");
+            if (!res.ok) {
+              console.error("Remote save failed", res.status, text);
+              this.options.onRemoteSave?.({
+                ok: false,
+                path: this.saveUrl,
+                error: `PUT ${res.status}: ${text.slice(0, 200)}`,
+              });
+              // 失败时仍允许本地下载，避免丢改动
+              const localUrl = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = localUrl;
+              a.download = cmd.title || this.title || "document.docx";
+              a.click();
+              URL.revokeObjectURL(localUrl);
+              return { status: "error" };
+            }
+            console.log("Remote save ok →", this.saveUrl);
+            this.options.onRemoteSave?.({
+              ok: true,
+              path: this.saveUrl,
+            });
+            // 成功：不触发本地下载
+            return { status: "ok" };
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error("Remote save exception", e);
+            this.options.onRemoteSave?.({
+              ok: false,
+              path: this.saveUrl,
+              error: msg,
+            });
+            const localUrl = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = localUrl;
+            a.download = cmd.title || this.title || "document.docx";
+            a.click();
+            URL.revokeObjectURL(localUrl);
+            return { status: "error" };
+          }
+        }
+
+        // ---------- 无远程地址：保持原行为（本地下载）----------
+        const localUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = cmd.title || "test.docx";
+        a.href = localUrl;
+        a.download = cmd.title || this.title || "document.docx";
         a.click();
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(localUrl);
 
         return { status: "ok" };
       };
