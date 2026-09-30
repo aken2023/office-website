@@ -54,6 +54,11 @@ export class EditorServer {
 
   private options: ServerOptions = {};
 
+  /** 打开时的远程文件 URL（例如 https://jianguoyun.aken.cc/file/xxx.docx） */
+  private sourceUrl: string = "";
+  /** 保存时 PUT 的目标 URL；默认由 sourceUrl 的 /file/ 换成 /put/ */
+  private saveUrl: string = "";
+
   constructor(options: ServerOptions = {}) {
     this.options = options;
     this.send = this.send.bind(this);
