@@ -225,17 +225,19 @@ export default function Page() {
       if (newDoc) {
         server.openNew(newDoc)
       }
-      if (fileUrl && !fileId) {
+         if (fileUrl && !fileId) {
         const { loader, tryDirect } = createExtensionLoader({
           onWaiting: () => setShowInstallHint(true),
           onReady: () => setShowInstallHint(false),
         });
         tryDirectRef.current = tryDirect;
         server.openUrl(fileUrl, {
-          fileType: searchParams.get("fileType") || '',
-          fileName: searchParams.get("fileName") || '',
+          fileType: searchParams.get("fileType") || "",
+          fileName: searchParams.get("fileName") || "",
+          // 可选：显式指定 PUT 地址；不传则 server 自动把 /file/ → /put/
+          saveUrl: searchParams.get("saveUrl") || undefined,
           loader,
-        })
+        });
       }
       loadEditor()
     }
