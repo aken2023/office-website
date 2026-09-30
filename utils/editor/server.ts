@@ -127,18 +127,31 @@ export class EditorServer {
     {
       fileType,
       fileName,
-      loader = (url: string) => fetch(url).then((res) => res.arrayBuffer()),
+      saveUrl,
+      loader = (u: string) => fetch(u).then((res) => res.arrayBuffer()),
     }: {
       fileType?: string;
       fileName?: string;
+      /** 可选：显式指定保存地址；不传则自动把 /file/ 换成 /put/ */
+      saveUrl?: string;
       loader?: (url: string) => Promise<ArrayBuffer>;
     } = {},
   ) {
-    const title = fileName || decodeURIComponent(url.split("/").pop() || "Document")
+    const title =
+      fileName ||
+      decodeURIComponent(url.split("/").pop() || "Document");
     this.fileType = fileType || getFileExt(title) || "docx";
     const documentType = getDocumentType(this.fileType);
     this.id = randomId();
     this.title = title;
+    this.sourceUrl = url;
+    // 自动推导：.../file/path/to.docx  →  .../put/path/to.docx
+    this.saveUrl =
+      saveUrl ||
+      (url.includes("/file/")
+        ? url.replace("/file/", "/put/")
+        : "");
+
     this.loadPromise = this.loadDocument(() => loader(url), this.fileType);
 
     return {
