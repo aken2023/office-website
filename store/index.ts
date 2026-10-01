@@ -44,9 +44,7 @@ export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       // Document Initial State
-      server: new EditorServer({
-        getState: () => get(),
-      }),
+    
 
       // Settings Initial State
       language: LocaleExtend.Auto,
@@ -92,16 +90,22 @@ export function useHasHydrated(): boolean {
 export function useResolvedLanguage(): Locale {
   return useAppStore((state) => resolveLanguage(state.language));
 }
-
 server: new EditorServer({
   getState: () => get(),
   onRemoteSave: ({ ok, path, error }) => {
+    const w = window as unknown as {
+      __pendingParentSaveReply?: (ok: boolean, error?: string) => void;
+      __pendingParentSaveId?: string;
+    };
+    if (w.__pendingParentSaveReply) {
+      w.__pendingParentSaveReply(ok, error);
+      w.__pendingParentSaveReply = undefined;
+      w.__pendingParentSaveId = undefined;
+    }
     if (ok) {
       console.log("[WebDAV] 已保存", path);
-      // 需要的话可改成 toast
     } else {
       console.error("[WebDAV] 保存失败", error);
-      alert("保存到坚果云失败：" + (error || "未知错误") + "\n已尝试本地下载备份");
     }
   },
 }),
