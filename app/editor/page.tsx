@@ -15,6 +15,22 @@ import { DocEditor } from "@/utils/editor/types";
 import { createExtensionLoader } from "@/utils/extension";
 import InstallExtensionDialog from "@/components/install-extension-dialog";
 
+/** 父页面（坚果云）关闭编辑时的保存桥接状态 */
+type ParentSaveBridge = {
+  __pendingParentSaveId?: string;
+  __pendingParentSaveReply?: (ok: boolean, error?: string) => void;
+  editor?: DocEditor;
+};
+
+function notifyParentSave(ok: boolean, error?: string) {
+  const w = window as unknown as ParentSaveBridge;
+  if (w.__pendingParentSaveReply) {
+    w.__pendingParentSaveReply(ok, error);
+    w.__pendingParentSaveReply = undefined;
+    w.__pendingParentSaveId = undefined;
+  }
+}
+
 export default function Page() {
   const server = useAppStore((state) => state.server);
   const language = useResolvedLanguage();
@@ -35,6 +51,57 @@ export default function Page() {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
+  }, []);
+
+  // 坚果云父页面 → 触发保存；保存结束后回传 parent-save-result
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data;
+      if (!d || typeof d !== "object" || d.type !== "parent-save") return;
+
+      const requestId = d.requestId as string | undefined;
+      const format = (d.format as string) || "docx";
+      const w = window as unknown as ParentSaveBridge;
+      const ed = w.editor;
+
+      const reply = (ok: boolean, error?: string) => {
+        const payload = {
+          type: "parent-save-result",
+          requestId,
+          ok,
+          error,
+        };
+        try {
+          if (e.source && typeof (e.source as Window).postMessage === "function") {
+            (e.source as Window).postMessage(payload, { targetOrigin: "*" });
+          } else if (window.parent !== window) {
+            window.parent.postMessage(payload, "*");
+          }
+        } catch (err) {
+          console.error("parent-save-result postMessage failed", err);
+        }
+      };
+
+      if (!ed?.downloadAs) {
+        reply(false, "editor not ready");
+        return;
+      }
+
+      w.__pendingParentSaveId = requestId;
+      w.__pendingParentSaveReply = reply;
+
+      try {
+        // 走 downloadas → server.ts 中 PUT saveUrl
+        ed.downloadAs(format);
+      } catch (err) {
+        reply(false, err instanceof Error ? err.message : String(err));
+        w.__pendingParentSaveReply = undefined;
+        w.__pendingParentSaveId = undefined;
+      }
+    };
+
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
   }, []);
 
   useLayoutEffect(() => {
@@ -91,10 +158,6 @@ export default function Page() {
           );
         },
       });
-
-      // const script = iframeDoc.createElement("script");
-      // script.src = apiUrl;
-      // iframeDoc.body.appendChild(script);
     };
 
     const createEditor = () => {
@@ -177,6 +240,7 @@ export default function Page() {
           onSaveDocument: (e: unknown) => {
             console.log("onSaveDocument", e);
             isDirty.current = false;
+            notifyParentSave(true);
           },
           onDownloadAs: (e: unknown) => {
             console.log("onDownloadAs", e);
@@ -184,10 +248,12 @@ export default function Page() {
           onSave: (e: unknown) => {
             console.log("onSave", e);
             isDirty.current = false;
+            notifyParentSave(true);
           },
           writeFile: async (e: unknown) => {
             console.log("writeFile", e);
             isDirty.current = false;
+            notifyParentSave(true);
           },
         },
         type: "desktop",
@@ -223,9 +289,9 @@ export default function Page() {
 
     const init = async () => {
       if (newDoc) {
-        server.openNew(newDoc)
+        server.openNew(newDoc);
       }
-         if (fileUrl && !fileId) {
+      if (fileUrl && !fileId) {
         const { loader, tryDirect } = createExtensionLoader({
           onWaiting: () => setShowInstallHint(true),
           onReady: () => setShowInstallHint(false),
@@ -234,15 +300,14 @@ export default function Page() {
         server.openUrl(fileUrl, {
           fileType: searchParams.get("fileType") || "",
           fileName: searchParams.get("fileName") || "",
-          // 可选：显式指定 PUT 地址；不传则 server 自动把 /file/ → /put/
           saveUrl: searchParams.get("saveUrl") || undefined,
           loader,
         });
       }
-      loadEditor()
-    }
+      loadEditor();
+    };
 
-    init()
+    init();
 
     return () => {
       MockSocket.off("connect", server.handleConnect);
@@ -254,21 +319,21 @@ export default function Page() {
 
   return (
     <>
-    <InstallExtensionDialog
-      open={showInstallHint}
-      onClose={() => setShowInstallHint(false)}
-      onTryDirect={tryDirectRef.current || undefined}
-    />
-    <div>
-      <div className="w-screen h-screen">
-        <div id="placeholder">
-          <iframe
-            className="w-0 h-0 hidden"
-            src={APP_ROOT + PRELOAD_HTML}
-          ></iframe>
+      <InstallExtensionDialog
+        open={showInstallHint}
+        onClose={() => setShowInstallHint(false)}
+        onTryDirect={tryDirectRef.current || undefined}
+      />
+      <div>
+        <div className="w-screen h-screen">
+          <div id="placeholder">
+            <iframe
+              className="w-0 h-0 hidden"
+              src={APP_ROOT + PRELOAD_HTML}
+            ></iframe>
+          </div>
         </div>
       </div>
-    </div>
     </>
   );
 }
