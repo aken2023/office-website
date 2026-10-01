@@ -37,61 +37,6 @@ export default function Page() {
     };
   }, []);
 
-
-
-  // 父页面（坚果云 iframe 宿主）→ 触发保存并回传结果
-  useEffect(() => {
-    const onMsg = (e: MessageEvent) => {
-      const d = e.data;
-      if (!d || typeof d !== "object" || d.type !== "parent-save") return;
-
-      const requestId = d.requestId as string | undefined;
-      const format = (d.format as string) || "docx";
-      const ed = (window as unknown as { editor?: DocEditor }).editor;
-
-      const reply = (ok: boolean, error?: string) => {
-        const payload = {
-          type: "parent-save-result",
-          requestId,
-          ok,
-          error,
-        };
-        // 回给发消息的窗口（坚果云页）
-        if (e.source && typeof (e.source as Window).postMessage === "function") {
-          (e.source as Window).postMessage(payload, { targetOrigin: "*" });
-        } else if (window.parent !== window) {
-          window.parent.postMessage(payload, "*");
-        }
-      };
-
-      if (!ed?.downloadAs) {
-        reply(false, "editor not ready");
-        return;
-      }
-
-      // 供 onRemoteSave / onSave 成功后带上同一个 requestId
-      (window as unknown as { __pendingParentSaveId?: string }).__pendingParentSaveId =
-        requestId;
-      (window as unknown as { __pendingParentSaveReply?: (ok: boolean, error?: string) => void }).__pendingParentSaveReply =
-        reply;
-
-      try {
-        // 走现有 downloadas → server.ts 里 PUT saveUrl
-        ed.downloadAs(format);
-      } catch (err) {
-        reply(false, err instanceof Error ? err.message : String(err));
-      }
-    };
-
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, []);
-
-
-
-
-
-
   useLayoutEffect(() => {
     if (!hasHydrated) return;
 
@@ -151,21 +96,6 @@ export default function Page() {
       // script.src = apiUrl;
       // iframeDoc.body.appendChild(script);
     };
-
-
-
-const notifyParentSave = (ok: boolean, error?: string) => {
-  const w = window as unknown as {
-    __pendingParentSaveId?: string;
-    __pendingParentSaveReply?: (ok: boolean, error?: string) => void;
-  };
-  if (w.__pendingParentSaveReply) {
-    w.__pendingParentSaveReply(ok, error);
-    w.__pendingParentSaveReply = undefined;
-    w.__pendingParentSaveId = undefined;
-  }
-};
-
 
     const createEditor = () => {
       const doc = server.getDocument();
@@ -244,31 +174,21 @@ const notifyParentSave = (ok: boolean, error?: string) => {
           onRequestSaveAs: (e: unknown) => {
             console.log("onRequestSaveAs", e);
           },
-          
+          onSaveDocument: (e: unknown) => {
+            console.log("onSaveDocument", e);
+            isDirty.current = false;
+          },
           onDownloadAs: (e: unknown) => {
             console.log("onDownloadAs", e);
           },
-          
-onSaveDocument: (e: unknown) => {
-  console.log("onSaveDocument", e);
-  isDirty.current = false;
-  notifyParentSave(true);
-},
-onSave: (e: unknown) => {
-  console.log("onSave", e);
-  isDirty.current = false;
-  notifyParentSave(true);
-},
-writeFile: async (e: unknown) => {
-  console.log("writeFile", e);
-  isDirty.current = false;
-  notifyParentSave(true);
-},
-
-
-
-
-
+          onSave: (e: unknown) => {
+            console.log("onSave", e);
+            isDirty.current = false;
+          },
+          writeFile: async (e: unknown) => {
+            console.log("writeFile", e);
+            isDirty.current = false;
+          },
         },
         type: "desktop",
         width: "100%",
