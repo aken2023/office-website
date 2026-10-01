@@ -152,6 +152,21 @@ export default function Page() {
       // iframeDoc.body.appendChild(script);
     };
 
+
+
+const notifyParentSave = (ok: boolean, error?: string) => {
+  const w = window as unknown as {
+    __pendingParentSaveId?: string;
+    __pendingParentSaveReply?: (ok: boolean, error?: string) => void;
+  };
+  if (w.__pendingParentSaveReply) {
+    w.__pendingParentSaveReply(ok, error);
+    w.__pendingParentSaveReply = undefined;
+    w.__pendingParentSaveId = undefined;
+  }
+};
+
+
     const createEditor = () => {
       const doc = server.getDocument();
       const user = server.getUser();
