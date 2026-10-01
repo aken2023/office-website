@@ -27,6 +27,26 @@ function getUrl(data: Uint8Array, type?: string) {
   return URL.createObjectURL(blob);
 }
 
+/** 按扩展名选择 PUT / 本地下载的 MIME */
+function contentTypeForExt(ext: string): string {
+  const mimeByExt: Record<string, string> = {
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    doc: "application/msword",
+    xls: "application/vnd.ms-excel",
+    ppt: "application/vnd.ms-powerpoint",
+    pdf: "application/pdf",
+  };
+  return mimeByExt[ext.toLowerCase()] || "application/octet-stream";
+}
+
+function fallbackDownloadName(title: string, fileType: string, cmdTitle?: string) {
+  if (cmdTitle) return cmdTitle;
+  if (title) return title;
+  return "document." + (fileType || "docx");
+}
+
 export class EditorServer {
   private id = "";
   private socket: MockSocket | null = null;
@@ -405,7 +425,6 @@ export class EditorServer {
     const u = new URL(req.url);
 
     const { id: key, send } = this;
-    // console.log("[msg] server: ", u, key);
 
     if (u.pathname.endsWith("/downloadas/" + key)) {
       const cmd = JSON.parse(u.searchParams.get("cmd") || "{}");
@@ -446,31 +465,21 @@ export class EditorServer {
         }
 
         const blob = new Blob([new Uint8Array(output)]);
+        const downloadName = fallbackDownloadName(
+          this.title,
+          this.fileType,
+          cmd.title,
+        );
+        const contentType = contentTypeForExt(this.fileType);
 
         // ---------- 远程保存到 WebDAV Worker ----------
         if (this.saveUrl) {
           try {
             const res = await fetch(this.saveUrl, {
               method: "PUT",
-
-const mimeByExt: Record<string, string> = {
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  // 可选
-  doc: "application/msword",
-  xls: "application/vnd.ms-excel",
-  ppt: "application/vnd.ms-powerpoint",
-  pdf: "application/pdf",
-};
-const contentType =
-  mimeByExt[this.fileType] || "application/octet-stream";
-
-// PUT 时：
-headers: { "Content-Type": contentType },
-
-
-              
+              headers: {
+                "Content-Type": contentType,
+              },
               body: blob,
             });
             const text = await res.text().catch(() => "");
@@ -485,7 +494,7 @@ headers: { "Content-Type": contentType },
               const localUrl = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = localUrl;
-              a.download = cmd.title || this.title || "document.docx";
+              a.download = downloadName;
               a.click();
               URL.revokeObjectURL(localUrl);
               return { status: "error" };
@@ -508,7 +517,7 @@ headers: { "Content-Type": contentType },
             const localUrl = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = localUrl;
-            a.download = cmd.title || this.title || "document.docx";
+            a.download = downloadName;
             a.click();
             URL.revokeObjectURL(localUrl);
             return { status: "error" };
@@ -519,7 +528,7 @@ headers: { "Content-Type": contentType },
         const localUrl = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = localUrl;
-        a.download = cmd.title || this.title || "document.docx";
+        a.download = downloadName;
         a.click();
         URL.revokeObjectURL(localUrl);
 
@@ -556,10 +565,9 @@ headers: { "Content-Type": contentType },
           type: "documentOpen",
           data: {
             type: "save",
-            // status: "ok",
             status: result.status,
             data: "data:,",
-            filetype: "pptx",
+            filetype: this.fileType || "docx",
           },
         });
       }, 100);
