@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useEffect, useState } from "react";
+import { useLayoutEffect, useRef, useEffect } from "react";
 import { useAppStore, useResolvedLanguage, useHasHydrated } from "@/store";
 import {
   API_JS,
@@ -12,8 +12,6 @@ import io, { MockSocket } from "@/utils/editor/socket";
 import { createFetchProxy } from "@/utils/editor/fetch";
 import { createXHRProxy } from "@/utils/editor/xhr";
 import { DocEditor } from "@/utils/editor/types";
-import { createExtensionLoader } from "@/utils/extension";
-import InstallExtensionDialog from "@/components/install-extension-dialog";
 
 /** 父页面（坚果云）关闭编辑时的保存桥接状态 */
 type ParentSaveBridge = {
@@ -37,8 +35,6 @@ export default function Page() {
   const theme = useAppStore((state) => state.theme);
   const hasHydrated = useHasHydrated();
   const isDirty = useRef(false);
-  const [showInstallHint, setShowInstallHint] = useState(false);
-  const tryDirectRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -91,7 +87,6 @@ export default function Page() {
       w.__pendingParentSaveReply = reply;
 
       try {
-        // 走 downloadas → server.ts 中 PUT saveUrl
         ed.downloadAs(format);
       } catch (err) {
         reply(false, err instanceof Error ? err.message : String(err));
@@ -240,7 +235,6 @@ export default function Page() {
           onSaveDocument: (e: unknown) => {
             console.log("onSaveDocument", e);
             isDirty.current = false;
-            // 无 saveUrl 时（纯本地下载）也尽量通知父页面；有 saveUrl 时以 onRemoteSave 为准
             notifyParentSave(true);
           },
           onDownloadAs: (e: unknown) => {
@@ -293,17 +287,17 @@ export default function Page() {
         server.openNew(newDoc);
       }
       if (fileUrl && !fileId) {
-        const { loader, tryDirect } = createExtensionLoader({
-          onWaiting: () => setShowInstallHint(true),
-          onReady: () => setShowInstallHint(false),
-        });
-        tryDirectRef.current = tryDirect;
+        // 直接 fetch，不走扩展、不弹「需要扩展程序」
+        // 依赖坚果云 Worker 的 CORS
         server.openUrl(fileUrl, {
           fileType: searchParams.get("fileType") || "",
           fileName: searchParams.get("fileName") || "",
-          // 可选：显式指定 PUT 地址；不传则 server 自动把 /file/ → /put/
           saveUrl: searchParams.get("saveUrl") || undefined,
-          loader,
+          loader: async (u: string) => {
+            const res = await fetch(u);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.arrayBuffer();
+          },
         });
       }
       loadEditor();
@@ -320,22 +314,15 @@ export default function Page() {
   }, [hasHydrated]);
 
   return (
-    <>
-      <InstallExtensionDialog
-        open={showInstallHint}
-        onClose={() => setShowInstallHint(false)}
-        onTryDirect={tryDirectRef.current || undefined}
-      />
-      <div>
-        <div className="w-screen h-screen">
-          <div id="placeholder">
-            <iframe
-              className="w-0 h-0 hidden"
-              src={APP_ROOT + PRELOAD_HTML}
-            ></iframe>
-          </div>
+    <div>
+      <div className="w-screen h-screen">
+        <div id="placeholder">
+          <iframe
+            className="w-0 h-0 hidden"
+            src={APP_ROOT + PRELOAD_HTML}
+          ></iframe>
         </div>
       </div>
-    </>
+    </div>
   );
 }
