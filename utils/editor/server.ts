@@ -452,10 +452,25 @@ export class EditorServer {
           try {
             const res = await fetch(this.saveUrl, {
               method: "PUT",
-              headers: {
-                "Content-Type":
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-              },
+
+const mimeByExt: Record<string, string> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  // 可选
+  doc: "application/msword",
+  xls: "application/vnd.ms-excel",
+  ppt: "application/vnd.ms-powerpoint",
+  pdf: "application/pdf",
+};
+const contentType =
+  mimeByExt[this.fileType] || "application/octet-stream";
+
+// PUT 时：
+headers: { "Content-Type": contentType },
+
+
+              
               body: blob,
             });
             const text = await res.text().catch(() => "");
