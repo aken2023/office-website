@@ -240,6 +240,7 @@ export default function Page() {
           onSaveDocument: (e: unknown) => {
             console.log("onSaveDocument", e);
             isDirty.current = false;
+            // 无 saveUrl 时（纯本地下载）也尽量通知父页面；有 saveUrl 时以 onRemoteSave 为准
             notifyParentSave(true);
           },
           onDownloadAs: (e: unknown) => {
@@ -300,6 +301,7 @@ export default function Page() {
         server.openUrl(fileUrl, {
           fileType: searchParams.get("fileType") || "",
           fileName: searchParams.get("fileName") || "",
+          // 可选：显式指定 PUT 地址；不传则 server 自动把 /file/ → /put/
           saveUrl: searchParams.get("saveUrl") || undefined,
           loader,
         });
